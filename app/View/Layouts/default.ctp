@@ -4,7 +4,7 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
 	<?php echo $this->Html->charset(); ?>
 	<title>
-		<?php echo $title_for_layout, ' - MISP'; ?>
+		<?php echo $title_for_layout, ' - MISP '. h(Configure::read('MISP.welcome_text_top')); ?>
 	</title>
 	<?php
 		if (!isset($debugMode)) {
@@ -17,6 +17,7 @@
 		echo $this->Html->css('bootstrap-timepicker');
 		echo $this->Html->css('bootstrap-colorpicker');
 		echo $this->Html->css('famfamfam-flags');
+		echo $this->Html->css('font-awesome');
 		if ($me) {
 			echo $this->Html->css('main.css?' . $queryVersion);
 		} else {

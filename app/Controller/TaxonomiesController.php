@@ -53,6 +53,7 @@ class TaxonomiesController extends AppController {
 		if (empty($taxonomy)) throw new NotFoundException('Taxonomy not found.');
 		$customPagination = new CustomPaginationTool();
 		$params = $customPagination->createPaginationRules($taxonomy['entries'], $this->passedArgs, 'TaxonomyEntry');
+		if ($params['sort'] == 'id') $params['sort'] = 'tag';
 		$this->params->params['paging'] = array($this->modelClass => $params);
 		$params = $customPagination->applyRulesOnArray($taxonomy['entries'], $params, 'taxonomies');
 		$customPagination->truncateByPagination($taxonomy['entries'], $params);
@@ -166,14 +167,19 @@ class TaxonomiesController extends AppController {
 					'change' => 'Executed an update of the taxonomy library, but there was nothing to update.',
 			));
 		}
-		if ($successes == 0 && $fails == 0) $this->Session->setFlash('All taxonomy libraries are up to date already.');
-		else if ($successes == 0) $this->Session->setFlash('Could not update any of the taxonomy libraries');
+		$message = '';
+		if ($successes == 0 && $fails == 0) $message = 'All taxonomy libraries are up to date already.';
+		else if ($successes == 0) $message = 'Could not update any of the taxonomy libraries';
 		else {
 			$message = 'Successfully updated ' . $successes . ' taxonomy libraries.';
 			if ($fails != 0) $message .= ' However, could not update ' . $fails . ' taxonomy libraries.';
-			$this->Session->setFlash($message);
 		}
-		$this->redirect(array('controller' => 'taxonomies', 'action' => 'index'));
+		if ($this->_isRest()) {
+			return $this->RestResponse->saveSuccessResponse('Taxonomy', 'update', false, $this->response->type(), $message);
+		} else {
+			$this->Session->setFlash($message);
+			$this->redirect(array('controller' => 'taxonomies', 'action' => 'index'));
+		}
 	}
 
 	public function addTag($taxonomy_id = false) {

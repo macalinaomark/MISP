@@ -315,7 +315,7 @@ class ShadowAttributesController extends AppController {
 				$this->request->data = array('ShadowAttribute' => $this->request->data);
 			}
 			if ($this->request->is('ajax')) $this->autoRender = false;
-			// Give error if someone tried to submit a attribute with attachment or malware-sample type.
+			// Give error if someone tried to submit an attribute with type 'attachment' or 'malware-sample'.
 			// TODO change behavior attachment options - this is bad ... it should rather by a messagebox or should be filtered out on the view level
 			if (isset($this->request->data['ShadowAttribute']['type']) && $this->ShadowAttribute->typeIsAttachment($this->request->data['ShadowAttribute']['type']) && !$this->_isRest()) {
 				$this->Session->setFlash(__('Attribute has not been added: attachments are added by "Add attachment" button', true), 'default', array(), 'error');
@@ -928,22 +928,24 @@ class ShadowAttributesController extends AppController {
 		}
 		if (!$this->request->is('Post')) throw new MethodNotAllowedException('This feature is only available using POST requests');
 		$result = array();
-		foreach ($this->request->data as $eventUuid) {
-			$temp = $this->ShadowAttribute->find('all', array(
-					'conditions' => array('event_uuid' => $eventUuid),
-					'recursive' => -1,
-					'contain' => array(
-							'Org' => array('fields' => array('uuid', 'name')),
-							'EventOrg' => array('fields' => array('uuid', 'name')),
-					),
-			));
-			if (empty($temp)) continue;
-			foreach ($temp as $key => $t) {
-				if ($this->ShadowAttribute->typeIsAttachment($t['ShadowAttribute']['type'])) {
-					$temp[$key]['ShadowAttribute']['data'] = $this->ShadowAttribute->base64EncodeAttachment($t['ShadowAttribute']);
+		if (!empty($this->request->data)) {
+			foreach ($this->request->data as $eventUuid) {
+				$temp = $this->ShadowAttribute->find('all', array(
+						'conditions' => array('event_uuid' => $eventUuid),
+						'recursive' => -1,
+						'contain' => array(
+								'Org' => array('fields' => array('uuid', 'name')),
+								'EventOrg' => array('fields' => array('uuid', 'name')),
+						),
+				));
+				if (empty($temp)) continue;
+				foreach ($temp as $key => $t) {
+					if ($this->ShadowAttribute->typeIsAttachment($t['ShadowAttribute']['type'])) {
+						$temp[$key]['ShadowAttribute']['data'] = $this->ShadowAttribute->base64EncodeAttachment($t['ShadowAttribute']);
+					}
 				}
+				$result = array_merge($result, $temp);
 			}
-			$result = array_merge($result, $temp);
 		}
 		if (empty($result)) {
 			$this->response->statusCode(404);

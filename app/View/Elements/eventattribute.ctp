@@ -11,6 +11,7 @@
 	} else {
 		$page = 0;
 	}
+	$fieldCount = 8;
 	if (Configure::read('Plugin.Sightings_enable') !== false) {
 		if (!empty($event['Sighting'])) {
 			foreach ($sightingsData['data'] as $aid => $data) {
@@ -132,9 +133,14 @@
 
 	<table class="table table-striped table-condensed">
 		<tr>
-			<?php if ($mayModify && !empty($event['objects'])): ?>
-				<th><input class="select_all" type="checkbox" title="Select all" role="button" tabindex="0" aria-label="Select all attributes/proposals on current page" onClick="toggleAllAttributeCheckboxes();" /></th>
-			<?php endif;?>
+			<?php
+				if ($mayModify && !empty($event['objects'])):
+					$fieldCount += 1;
+			?>
+					<th><input class="select_all" type="checkbox" title="Select all" role="button" tabindex="0" aria-label="Select all attributes/proposals on current page" onClick="toggleAllAttributeCheckboxes();" /></th>
+			<?php
+				endif;
+			?>
 			<th class="context hidden"><?php echo $this->Paginator->sort('id');?></th>
 			<th class="context hidden">UUID</th>
 			<th><?php echo $this->Paginator->sort('timestamp', 'Date');?></th>
@@ -146,25 +152,25 @@
 			<th><?php echo $this->Paginator->sort('comment');?></th>
 			<?php
 				if ($mayChangeCorrelation && !$event['Event']['disable_correlation']):
+					$fieldCount += 1;
 			?>
 					<th>Correlate</th>
 			<?php
 				endif;
 			?>
 			<th>Related Events</th>
+			<th>Feed hits</th>
+			<th title="<?php echo $attrDescriptions['signature']['desc'];?>"><?php echo $this->Paginator->sort('to_ids', 'IDS');?></th>
+			<th title="<?php echo $attrDescriptions['distribution']['desc'];?>"><?php echo $this->Paginator->sort('distribution');?></th>
 			<?php
-				if ($isSiteAdmin):
+				if (Configure::read('Plugin.Sightings_enable') !== false):
+					$fieldCount += 2;
 			?>
-					<th>Feed hits</th>
+					<th>Sightings</th>
+					<th>Activity</th>
 			<?php
 				endif;
 			?>
-			<th title="<?php echo $attrDescriptions['signature']['desc'];?>"><?php echo $this->Paginator->sort('to_ids', 'IDS');?></th>
-			<th title="<?php echo $attrDescriptions['distribution']['desc'];?>"><?php echo $this->Paginator->sort('distribution');?></th>
-			<?php if (Configure::read('Plugin.Sightings_enable') !== false): ?>
-				<th>Sightings</th>
-				<th>Activity</th>
-			<?php endif; ?>
 			<th class="actions">Actions</th>
 		</tr>
 		<?php
@@ -216,7 +222,7 @@
 						</td>
 					<?php endif;
 						if (isset($object['proposal_to_delete']) && $object['proposal_to_delete']):
-							for ($i = 0; $i < 9; $i++):
+							for ($i = 0; $i < $fieldCount; $i++):
 					?>
 								<td class="<?php echo $extra; ?>" style="font-weight:bold;"><?php echo ($i == 0 ? 'DELETE' : '&nbsp;'); ?></td>
 					<?php
@@ -397,7 +403,7 @@
 												foreach ($relatedData as $k => $v) {
 													$popover .= '<span class=\'bold black\'>' . h($k) . '</span>: <span class="blue">' . h($v) . '</span><br />';
 												}
-												echo '<li style="padding-right: 0px; padding-left:0px;"  data-toggle="popover" data-content="' . h($popover) . '" data-trigger="hover"><span>';
+												echo '<li style="padding-right: 0px; padding-left:0px;" data-toggle="popover" data-content="' . h($popover) . '" data-trigger="hover"><span>';
 												if ($relatedAttribute['org_id'] == $me['org_id']) {
 													echo $this->Html->link($relatedAttribute['id'], array('controller' => 'events', 'action' => 'view', $relatedAttribute['id'], true, $event['Event']['id']), array ('class' => 'red'));
 												} else {
@@ -410,34 +416,34 @@
 									?>
 								</ul>
 							</td>
-							<?php
-								if ($isSiteAdmin):
-							?>
-									<td class="shortish <?php echo $extra; ?>">
-										<ul class="inline" style="margin:0px;">
-											<?php
-												if (!empty($object['Feed'])):
-													foreach ($object['Feed'] as $feed):
-														$popover = '';
-														foreach ($feed as $k => $v):
-															if ($k == 'id') continue;
-															$popover .= '<span class=\'bold black\'>' . Inflector::humanize(h($k)) . '</span>: <span class="blue">' . h($v) . '</span><br />';
-														endforeach;
-													?>
-														<li style="padding-right: 0px; padding-left:0px;"  data-toggle="popover" data-content="<?php echo h($popover);?>" data-trigger="hover"><span>
-															<?php
-																echo $this->Html->link($feed['id'], array('controller' => 'feeds', 'action' => 'previewIndex', $feed['id']));
-															endforeach;
-															?>
-														</li>
-											<?php
-												endif;
+							<td class="shortish <?php echo $extra; ?>">
+								<ul class="inline" style="margin:0px;">
+									<?php
+										if (!empty($object['Feed'])):
+											foreach ($object['Feed'] as $feed):
+												$popover = '';
+												foreach ($feed as $k => $v):
+													if ($k == 'id') continue;
+													$popover .= '<span class=\'bold black\'>' . Inflector::humanize(h($k)) . '</span>: <span class="blue">' . h($v) . '</span><br />';
+												endforeach;
 											?>
-										</ul>
-									</td>
-							<?php
-								endif;
-							?>
+												<li style="padding-right: 0px; padding-left:0px;"  data-toggle="popover" data-content="<?php echo h($popover);?>" data-trigger="hover"><span>
+													<?php
+														if ($isSiteAdmin):
+															echo $this->Html->link($feed['id'], array('controller' => 'feeds', 'action' => 'previewIndex', $feed['id']), array('style' => 'margin-right:3px;'));
+														else:
+													?>
+														<span style="margin-right:3px;"><?php echo h($feed['id']);?></span>
+													<?php
+														endif;
+													endforeach;
+													?>
+												</li>
+									<?php
+										endif;
+									?>
+								</ul>
+							</td>
 							<td class="short <?php echo $extra; ?>">
 								<div id = "<?php echo $currentType . '_' . $object['id'] . '_to_ids_placeholder'; ?>" class = "inline-field-placeholder"></div>
 								<div id = "<?php echo $currentType . '_' . $object['id'] . '_to_ids_solid'; ?>" class="inline-field-solid" ondblclick="activateField('<?php echo $currentType; ?>', '<?php echo $object['id']; ?>', 'to_ids', <?php echo $event['Event']['id'];?>);">

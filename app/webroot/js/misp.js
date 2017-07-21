@@ -71,6 +71,28 @@ function cancelPrompt(isolated) {
 	$("#confirmation_box").empty();
 }
 
+function submitEventDeletion() {
+	var formData = $('#PromptForm').serialize();
+	$.ajax({
+		beforeSend: function (XMLHttpRequest) {
+			$(".loading").show();
+		},
+		data: formData,
+		success:function (data, textStatus) {
+			updateIndex(context_id, context);
+			handleGenericAjaxResponse(data);
+		},
+		complete:function() {
+			$(".loading").hide();
+			$("#confirmation_box").fadeOut();
+			$("#gray_out").fadeOut();
+		},
+		type:"post",
+		cache: false,
+		url:"/" + type + "/" + action + "/" + id,
+	});
+}
+
 function submitDeletion(context_id, action, type, id) {
 	var context = 'event';
 	if (type == 'template_elements') context = 'template';
@@ -568,6 +590,14 @@ function toggleAllAttributeCheckboxes() {
 	}
 }
 
+function toggleAllCheckboxes() {
+	if ($(".select_all").is(":checked")) {
+		$(".select").prop("checked", true);
+	} else {
+		$(".select").prop("checked", false);
+	}
+}
+
 function toggleAllTaxonomyCheckboxes() {
 	if ($(".select_all").is(":checked")) {
 		$(".select_taxonomy").prop("checked", true);
@@ -581,6 +611,11 @@ function attributeListAnyAttributeCheckBoxesChecked() {
 	else $('.mass-select').addClass('hidden');
 }
 
+function eventListCheckboxesChecked() {
+	if ($('.select:checked').length > 0) $('.mass-select').removeClass('hidden');
+	else $('.mass-select').addClass('hidden');
+}
+
 function attributeListAnyProposalCheckBoxesChecked() {
 	if ($('.select_proposal:checked').length > 0) $('.mass-proposal-select').removeClass('hidden');
 	else $('.mass-proposal-select').addClass('hidden');
@@ -589,6 +624,22 @@ function attributeListAnyProposalCheckBoxesChecked() {
 function taxonomyListAnyCheckBoxesChecked() {
 	if ($('.select_taxonomy:checked').length > 0) $('.mass-select').show();
 	else $('.mass-select').hide();
+}
+
+function multiSelectDeleteEvents() {
+	var selected = [];
+	$(".select").each(function() {
+		if ($(this).is(":checked")) {
+			var temp = $(this).data("id");
+			if (temp != null) {
+				selected.push(temp);
+			}
+		}
+	});
+	$.get("/events/delete/" + JSON.stringify(selected), function(data) {
+		$("#confirmation_box").html(data);
+		openPopup("#confirmation_box");
+	});
 }
 
 function multiSelectAction(event, context) {
@@ -656,6 +707,11 @@ function submitMassTaxonomyTag() {
 	$('#PromptForm').submit();
 }
 
+function submitMassEventDelete() {
+	$('#PromptForm').trigger('submit');
+	event.preventDefault();
+}
+
 function getSelected() {
 	var selected = [];
 	$(".select_attribute").each(function() {
@@ -720,7 +776,7 @@ function loadAttributeTags(id) {
 		dataType:"html",
 		cache: false,
 		success:function (data, textStatus) {
-			$("#Attribute_"+id+"_tr .attributeTagContainer").html(data);
+			$("#ShadowAttribute_"+id+"_tr .attributeTagContainer").html(data);
 		},
 		url:"/tags/showAttributeTag/" + id
 	});
@@ -1346,7 +1402,9 @@ function indexEvaluateFiltering() {
 function quickFilter(passedArgs, url) {
 	passedArgs["searchall"] = $('#quickFilterField').val().trim();
 	for (var key in passedArgs) {
-		url += "/" + key + ":" + passedArgs[key];
+		if (key !== 'page') {
+			url += "/" + key + ":" + passedArgs[key];
+		}
 	}
 	window.location.href=url;
 }
@@ -1850,7 +1908,8 @@ function freetextImportResultsSubmit(id, count) {
 				distribution:$('#Attribute' + i + 'Distribution').val(),
 				sharing_group_id:$('#Attribute' + i + 'SharingGroupId').val(),
 				data:$('#Attribute' + i + 'Data').val(),
-				data_is_handled:$('#Attribute' + i + 'DataIsHandled').val()
+				data_is_handled:$('#Attribute' + i + 'DataIsHandled').val(),
+				tags:$('#Attribute' + i + 'Tags').val()
 			}
 			attributeArray[attributeArray.length] = temp;
 		}
@@ -2763,6 +2822,29 @@ function checkOrphanedAttributes() {
 		type:"get",
 		cache: false,
 		url: "/attributes/checkOrphanedAttributes/",
+	});
+}
+
+function checkAttachments() {
+	$.ajax({
+		beforeSend: function (XMLHttpRequest) {
+			$(".loading").show();
+		},
+		success:function (data, textStatus) {
+			var color = 'red';
+			var text = ' (Bad links detected)';
+			if (data !== undefined && data.trim() == '0') {
+				color = 'green';
+				text = ' (OK)';
+			}
+			$("#orphanedFileCount").html('<span class="' + color + '">' + data + text + '</span>');
+		},
+		complete:function() {
+			$(".loading").hide();
+		},
+		type:"get",
+		cache: false,
+		url: "/attributes/checkAttachments/",
 	});
 }
 

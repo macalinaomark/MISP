@@ -9,27 +9,53 @@
 <div class="tags index">
 	<h2><?php echo $favouritesOnly ? 'Your Favourite Tags' : 'Tags';?></h2>
 	<div class="pagination">
-        <ul>
-        <?php
-        $this->Paginator->options(array(
-            'update' => '.span12',
-            'evalScripts' => true,
-            'before' => '$(".progress").show()',
-            'complete' => '$(".progress").hide()',
-        ));
+		<ul>
+		<?php
+		$this->Paginator->options(array(
+			'update' => '.span12',
+			'evalScripts' => true,
+			'before' => '$(".progress").show()',
+			'complete' => '$(".progress").hide()',
+		));
 
-            echo $this->Paginator->prev('&laquo; ' . __('previous'), array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'prev disabled', 'escape' => false, 'disabledTag' => 'span'));
-            echo $this->Paginator->numbers(array('modulus' => 20, 'separator' => '', 'tag' => 'li', 'currentClass' => 'active', 'currentTag' => 'span'));
-            echo $this->Paginator->next(__('next') . ' &raquo;', array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'next disabled', 'escape' => false, 'disabledTag' => 'span'));
-        ?>
-        </ul>
-    </div>
+			echo $this->Paginator->prev('&laquo; ' . __('previous'), array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'prev disabled', 'escape' => false, 'disabledTag' => 'span'));
+			echo $this->Paginator->numbers(array('modulus' => 20, 'separator' => '', 'tag' => 'li', 'currentClass' => 'active', 'currentTag' => 'span'));
+			echo $this->Paginator->next(__('next') . ' &raquo;', array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'next disabled', 'escape' => false, 'disabledTag' => 'span'));
+		?>
+		</ul>
+	</div>
 	<div id="hiddenFormDiv">
-    <?php
+	<?php
 		echo $this->Form->create('FavouriteTag', array('url' => '/favourite_tags/toggle'));
 		echo $this->Form->input('data', array('label' => false, 'style' => 'display:none;'));
 		echo $this->Form->end();
 	?>
+	</div>
+	<?php
+		$tab = "Center";
+		$filtered = false;
+		if (count($passedArgsArray) > 0) {
+			$tab = "Left";
+			$filtered = true;
+		}
+	?>
+
+
+	<div class="tabMenuFixedContainer" style="display:inline-block;">
+		<?php if ($filtered):
+			foreach ($passedArgsArray as $k => $v):?>
+				<span class="tabMenuFixed tabMenuFixedElement">
+					<?php echo h(ucfirst($k)) . " : " . h($v); ?>
+				</span>
+			<?php endforeach; ?>
+			<span class="tabMenuFixed tabMenuFixedRight tabMenuSides">
+				<?php echo $this->Html->link('', array('controller' => 'tags', 'action' => 'index'), array('class' => 'icon-remove', 'title' => 'Remove filters'));?>
+			</span>
+		<?php endif;?>
+		<span style="border-right:0px !important;">
+			<span id="quickFilterButton" role="button" tabindex="0" aria-label="Filter user tags" class="tabMenuFilterFieldButton useCursorPointer" onClick="quickFilter(<?php echo h($passedArgs); ?>, '<?php echo $baseurl . '/tags/index'; ?>');">Filter</span>
+			<input class="tabMenuFilterField" type="text" id="quickFilterField"></input>
+		</span>
 	</div>
 	<table class="table table-striped table-hover table-condensed">
 	<tr>
@@ -86,24 +112,23 @@ foreach ($list as $k => $item): ?>
 endforeach; ?>
 	</table>
 	<p>
-    <?php
-    echo $this->Paginator->counter(array(
-    'format' => __('Page {:page} of {:pages}, showing {:current} records out of {:count} total, starting on record {:start}, ending on {:end}')
-    ));
-    ?>
-    </p>
-    <div class="pagination">
-        <ul>
-        <?php
-            echo $this->Paginator->prev('&laquo; ' . __('previous'), array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'prev disabled', 'escape' => false, 'disabledTag' => 'span'));
-            echo $this->Paginator->numbers(array('modulus' => 20, 'separator' => '', 'tag' => 'li', 'currentClass' => 'active', 'currentTag' => 'span'));
-            echo $this->Paginator->next(__('next') . ' &raquo;', array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'next disabled', 'escape' => false, 'disabledTag' => 'span'));
-        ?>
-        </ul>
-    </div>
+	<?php
+		echo $this->Paginator->counter(array(
+			'format' => __('Page {:page} of {:pages}, showing {:current} records out of {:count} total, starting on record {:start}, ending on {:end}')
+		));
+	?>
+	</p>
+	<div class="pagination">
+		<ul>
+		<?php
+			echo $this->Paginator->prev('&laquo; ' . __('previous'), array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'prev disabled', 'escape' => false, 'disabledTag' => 'span'));
+			echo $this->Paginator->numbers(array('modulus' => 20, 'separator' => '', 'tag' => 'li', 'currentClass' => 'active', 'currentTag' => 'span'));
+			echo $this->Paginator->next(__('next') . ' &raquo;', array('tag' => 'li', 'escape' => false), null, array('tag' => 'li', 'class' => 'next disabled', 'escape' => false, 'disabledTag' => 'span'));
+		?>
+		</ul>
+	</div>
 
 </div>
 <?php
 	$menuItem = $favouritesOnly ? 'indexfav' : 'index';
 	echo $this->element('side_menu', array('menuList' => 'tags', 'menuItem' => $menuItem));
-?>

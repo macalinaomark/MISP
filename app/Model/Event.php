@@ -246,12 +246,8 @@ class Event extends AppModel {
 		),
 		'uuid' => array(
 			'uuid' => array(
-				'rule' => array('uuid'),
-				//'message' => 'Your custom message here',
-				//'allowEmpty' => false,
-				//'required' => false,
-				//'last' => false, // Stop validation after this rule
-				//'on' => 'create', // Limit validation to 'create' or 'update' operations
+				'rule' => array('custom', '/^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/'),
+				'message' => 'Please provide a valid UUID'
 			),
 		),
 	);
@@ -338,7 +334,12 @@ class Event extends AppModel {
 		$this->EventTag->deleteAll(array('event_id' => $this->id));
 
 		// only delete the file if it exists
-		$filepath = APP . "files" . DS . $this->id;
+		$attachments_dir = Configure::read('MISP.attachments_dir');
+		if (empty($attachments_dir)) {
+			$my_server = ClassRegistry::init('Server');
+			$attachments_dir = $my_server->getDefaultAttachments_dir();
+		}
+		$filepath = $attachments_dir . DS . $this->id;
 		App::uses('Folder', 'Utility');
 		if (is_dir($filepath)) {
 			if (!$this->destroyDir($filepath)) {
@@ -414,6 +415,31 @@ class Event extends AppModel {
 
 	public function isOwnedByOrg($eventid, $org) {
 		return $this->field('id', array('id' => $eventid, 'org_id' => $org)) === $eventid;
+	}
+
+	public function attachtagsToEvents($events) {
+		$tagsToFetch = array();
+		foreach ($events as $k => $event) {
+			if (!empty($event['EventTag'])) {
+				foreach ($event['EventTag'] as $et) {
+					$tagsToFetch[$et['tag_id']] = $et['tag_id'];
+				}
+			}
+		}
+		$tags = $this->EventTag->Tag->find('all', array(
+			'conditions' => array('Tag.id' => $tagsToFetch),
+			'recursive' => -1,
+			'order' => false
+		));
+		$tags = Set::combine($tags, '{n}.Tag.id', '{n}');
+		foreach ($events as $k => $event) {
+			if (!empty($event['EventTag'])) {
+				foreach ($event['EventTag'] as $k2 => $et) {
+					$events[$k]['EventTag'][$k2]['Tag'] = $tags[$et['tag_id']]['Tag'];
+				}
+			}
+		}
+		return $events;
 	}
 
 	// gets the logged in user + an array of events, attaches the correlation count to each
@@ -767,10 +793,12 @@ class Event extends AppModel {
 		if (!isset($push['canPush']) || !$push['canPush']) {
 			return 'Trying to push to an outdated instance.';
 		}
-    $unpublish_event = $server['Server']['unpublish_event'];
-    if ($unpublish_event) {
-      $event['Event']['published'] = 0;
-    }
+		if (isset($server['Server']['unpublish_event'])) {
+			$unpublish_event = $server['Server']['unpublish_event'];
+			if ($unpublish_event) {
+				$event['Event']['published'] = 0;
+			}
+		}
 		$updated = null;
 		$newLocation = $newTextBody = '';
 		$result = $this->restfulEventToServer($event, $server, null, $newLocation, $newTextBody, $HttpSocket);
@@ -1343,6 +1371,14 @@ class Event extends AppModel {
 		if (!$options['includeAllTags']) $tagConditions = array('exportable' => 1);
 		else $tagConditions = array();
 
+		$sharingGroupDataTemp = $this->SharingGroup->find('all', array(
+			'fields' => $fieldsSharingGroup[(($user['Role']['perm_site_admin'] || $user['Role']['perm_sync']) ? 1 : 0)]['fields'],
+		));
+		$sharingGroupData = array();
+		foreach ($sharingGroupDataTemp as $k => $v) {
+			$sharingGroupData[$v['SharingGroup']['id']] = $v;
+		}
+
 		$params = array(
 			'conditions' => $conditions,
 			'recursive' => 0,
@@ -1356,8 +1392,11 @@ class Event extends AppModel {
 				'Attribute' => array(
 					'fields' => $fieldsAtt,
 					'conditions' => $conditionsAttributes,
-					'SharingGroup' => $fieldsSharingGroup[(($user['Role']['perm_site_admin'] || $user['Role']['perm_sync']) ? 1 : 0)],
-					'order' => false
+					'order' => false,
+					'AttributeTag' => array(
+						'Tag' => array('conditions' => $tagConditions, 'order' => false),
+						'order' => false
+					),
 				),
 				'ShadowAttribute' => array(
 					'fields' => $fieldsShadowAtt,
@@ -1365,22 +1404,16 @@ class Event extends AppModel {
 					'Org' => array('fields' => $fieldsOrg),
 					'order' => false
 				),
-				'SharingGroup' => $fieldsSharingGroup[(($user['Role']['perm_site_admin'] || $user['Role']['perm_sync']) ? 1 : 0)],
 				'EventTag' => array(
 					'Tag' => array('conditions' => $tagConditions, 'order' => false),
 					'order' => false
 				)
 			)
 		);
-		if ($options['sgReferenceOnly']) {
-			unset($params['contain']['SharingGroup']);
-			unset($params['contain']['Attribute']['SharingGroup']);
-		}
 		if ($options['metadata']) {
 			unset($params['contain']['Attribute']);
 			unset($params['contain']['ShadowAttribute']);
 		}
-		$params['contain']['Attribute']['AttributeTag'] = array('Tag' => array('conditions' => $tagConditions));
 		if ($user['Role']['perm_site_admin']) {
 			$params['contain']['User'] = array('fields' => 'email');
 		}
@@ -1391,13 +1424,18 @@ class Event extends AppModel {
 		if (Configure::read('Plugin.Sightings_enable') !== false) {
 			$this->Sighting = ClassRegistry::init('Sighting');
 		}
+		$userEmails = array();
 		foreach ($results as $eventKey => &$event) {
+			if (!$options['sgReferenceOnly'] && $event['Event']['sharing_group_id']) {
+				$event['SharingGroup'] = $sharingGroupData[$event['Event']['sharing_group_id']]['SharingGroup'];
+			}
 			// Add information for auditor user
 			if ($event['Event']['orgc_id'] === $user['org_id'] && $user['Role']['perm_audit']) {
-				$UserEmail = $this->User->getAuthUser($event['Event']['user_id'])['email'];
-				$event['Event']['event_creator_email'] = $UserEmail;
+				if (!isset($userEmails[$event['Event']['user_id']])) {
+					$userEmails[$event['Event']['user_id']] = $this->User->getAuthUser($event['Event']['user_id'])['email'];
+				}
+				$event['Event']['event_creator_email'] = $userEmails[$event['Event']['user_id']];
 			}
-			// unset the empty sharing groups that are created due to the way belongsTo is handled
 			if (isset($event['SharingGroup'])) {
 				if (isset($event['SharingGroup']['SharingGroupServer'])) {
 					foreach ($event['SharingGroup']['SharingGroupServer'] as &$sgs) {
@@ -1406,7 +1444,6 @@ class Event extends AppModel {
 						}
 					}
 				}
-				if ($event['SharingGroup']['id'] == null) unset($event['SharingGroup']);
 			}
 			$event['Galaxy'] = array();
 			// unset empty event tags that got added because the tag wasn't exportable
@@ -1460,11 +1497,21 @@ class Event extends AppModel {
 					$this->Warninglist = ClassRegistry::init('Warninglist');
 					$warninglists = $this->Warninglist->fetchForEventView();
 				}
-				if ($isSiteAdmin && isset($options['includeFeedCorrelations']) && $options['includeFeedCorrelations']) {
+				if (isset($options['includeFeedCorrelations']) && $options['includeFeedCorrelations']) {
 					$this->Feed = ClassRegistry::init('Feed');
-					$event['Attribute'] = $this->Feed->attachFeedCorrelations($event['Attribute']);
+					$event['Attribute'] = $this->Feed->attachFeedCorrelations($event['Attribute'], $user);
 				}
 				foreach ($event['Attribute'] as $key => $attribute) {
+					if (!$options['sgReferenceOnly'] && $event['Attribute'][$key]['sharing_group_id']) {
+						$event['Attribute'][$key]['SharingGroup'] = $sharingGroupData[$event['Attribute'][$key]['sharing_group_id']]['SharingGroup'];
+						if (isset($attribute['SharingGroup']['SharingGroupServer'])) {
+							foreach ($attribute['SharingGroup']['SharingGroupServer'] as &$sgs) {
+								if ($sgs['server_id'] == 0) {
+									$sgs['Server'] = array('id' => '0', 'url' => Configure::read('MISP.baseurl'), 'name' => Configure::read('MISP.baseurl'));
+								}
+							}
+						}
+					}
 					if ($options['enforceWarninglist'] && !$this->Warninglist->filterWarninglistAttributes($warninglists, $attribute, $this->Warninglist)) {
 						unset($event['Attribute'][$key]);
 						continue;
@@ -1473,15 +1520,6 @@ class Event extends AppModel {
 						if ($this->Attribute->typeIsAttachment($attribute['type'])) {
 							$encodedFile = $this->Attribute->base64EncodeAttachment($attribute);
 							$event['Attribute'][$key]['data'] = $encodedFile;
-						}
-					}
-					if (isset($attribute['SharingGroup'])) {
-						if (isset($attribute['SharingGroup']['SharingGroupServer'])) {
-							foreach ($attribute['SharingGroup']['SharingGroupServer'] as &$sgs) {
-								if ($sgs['server_id'] == 0) {
-									$sgs['Server'] = array('id' => '0', 'url' => Configure::read('MISP.baseurl'), 'name' => Configure::read('MISP.baseurl'));
-								}
-							}
 						}
 					}
 					// unset empty attribute tags that got added because the tag wasn't exportable
@@ -1496,10 +1534,6 @@ class Event extends AppModel {
 					// This is to differentiate between proposals that were made to an attribute for modification and between proposals for new attributes
 
 					if (isset($event['ShadowAttribute'])) {
-						if ($isSiteAdmin && isset($options['includeFeedCorrelations']) && $options['includeFeedCorrelations']) {
-							$this->Feed = ClassRegistry::init('Feed');
-							$event['ShadowAttribute'] = $this->Feed->attachFeedCorrelations($event['ShadowAttribute']);
-						}
 						foreach ($event['ShadowAttribute'] as $k => $sa) {
 							if (!empty($sa['old_id'])) {
 								if ($event['ShadowAttribute'][$k]['old_id'] == $attribute['id']) {
@@ -1520,6 +1554,12 @@ class Event extends AppModel {
 					}
 				}
 				$event['Attribute'] = array_values($event['Attribute']);
+			}
+			if (isset($event['ShadowAttribute'])) {
+				if ($isSiteAdmin && isset($options['includeFeedCorrelations']) && $options['includeFeedCorrelations']) {
+					$this->Feed = ClassRegistry::init('Feed');
+					$event['ShadowAttribute'] = $this->Feed->attachFeedCorrelations($event['ShadowAttribute'], $user);
+				}
 			}
 			if (Configure::read('Plugin.Sightings_enable') !== false) {
 				$event['Sighting'] = $this->Sighting->attachToEvent($event, $user);
@@ -2191,7 +2231,6 @@ class Event extends AppModel {
 					}
 				}
 			}
-
 			if ($fromXml) $created_id = $this->id;
 			if (!empty($data['Event']['published']) && 1 == $data['Event']['published']) {
 				// do the necessary actions to publish the event (email, upload,...)
@@ -2639,11 +2678,10 @@ class Event extends AppModel {
 			$this->save($event, array('fieldList' => $fieldList));
 		}
 		if (Configure::read('Plugin.ZeroMQ_enable')) {
-			App::uses('PubSubTool', 'Tools');
-			$pubSubTool = new PubSubTool();
+			$pubSubTool = $this->getPubSubTool();
 			$hostOrg = $this->Org->find('first', array('conditions' => array('name' => Configure::read('MISP.org')), 'fields' => array('id')));
 			if (!empty($hostOrg)) {
-				$user = array('org_id' => $hostOrg['Org']['id'], 'Role' => array('perm_sync' => 0, 'perm_site_admin' => 0), 'Organisation' => $hostOrg['Org']);
+				$user = array('org_id' => $hostOrg['Org']['id'], 'Role' => array('perm_sync' => 0, 'perm_audit' => 0, 'perm_site_admin' => 0), 'Organisation' => $hostOrg['Org']);
 				$fullEvent = $this->fetchEvent($user, array('eventid' => $id));
 				if (!empty($fullEvent)) $pubSubTool->publishEvent($fullEvent[0]);
 			}
@@ -2861,7 +2899,7 @@ class Event extends AppModel {
 		$randomFileName = $this->generateRandomFileName();
 		$tmpDir = APP . "files" . DS . "scripts" . DS . "tmp";
 		$stixFile = new File($tmpDir . DS . $randomFileName . ".stix");
-		$stix_framing = shell_exec('python ' . APP . "files" . DS . "scripts" . DS . 'misp2stix_framing.py ' . escapeshellarg(Configure::read('MISP.baseurl')) . ' ' . escapeshellarg(Configure::read('MISP.org')) . ' ' . escapeshellarg($returnType));
+		$stix_framing = shell_exec('python ' . APP . "files" . DS . "scripts" . DS . 'misp2stix_framing.py ' . escapeshellarg(Configure::read('MISP.baseurl')) . ' ' . escapeshellarg(Configure::read('MISP.org')) . ' ' . escapeshellarg($returnType) . ' 2>' . APP . 'tmp/logs/exec-errors.log');
 		if (empty($stix_framing)) {
 			$stixFile->delete();
 			return array('success' => 0, 'message' => 'There was an issue generating the STIX export.');
@@ -2897,7 +2935,7 @@ class Event extends AppModel {
 			$tempFile->write(json_encode($event[0]));
 			unset($event);
 			$scriptFile = APP . "files" . DS . "scripts" . DS . "misp2stix.py";
-			$result = shell_exec('python ' . $scriptFile . ' ' . $randomFileName . ' ' . escapeshellarg($returnType) . ' ' . escapeshellarg(Configure::read('MISP.baseurl')) . ' ' . escapeshellarg(Configure::read('MISP.org')));
+			$result = shell_exec('python ' . $scriptFile . ' ' . $randomFileName . ' ' . escapeshellarg($returnType) . ' ' . escapeshellarg(Configure::read('MISP.baseurl')) . ' ' . escapeshellarg(Configure::read('MISP.org')) . ' 2>' . APP . 'tmp/logs/exec-errors.log');
 			// The result of the script will be a returned JSON object with 2 variables: success (boolean) and message
 			// If success = 1 then the temporary output file was successfully written, otherwise an error message is passed along
 			$decoded = json_decode($result, true);
@@ -3158,6 +3196,9 @@ class Event extends AppModel {
 				if (isset($r['categories']) && !is_array($r['categories'])) {
 					$r['categories'] = array($r['categories']);
 				}
+				if (isset($r['tags']) && !is_array($r['tags'])) {
+					$r['tags'] = array($r['tags']);
+				}
 				foreach ($r['values'] as &$value) {
 					if (!is_array($r['values']) || !isset($r['values'][0])) {
 						$r['values'] = array($r['values']);
@@ -3196,7 +3237,8 @@ class Event extends AppModel {
 							'default_type' => $r['types'][0],
 							'comment' => isset($r['comment']) ? $r['comment'] : false,
 							'to_ids' => isset($r['to_ids']) ? $r['to_ids'] : false,
-							'value' => $value
+							'value' => $value,
+							'tags' => isset($r['tags']) ? $r['tags'] : false
 					);
 					if (isset($r['categories'])) {
 						$temp['categories'] = $r['categories'];
@@ -3274,6 +3316,7 @@ class Event extends AppModel {
 						$sightingsData[$sighting['attribute_id']][$type]['orgs'][$orgName]['date'] = $sighting['date_sighting'];
 					}
 				}
+				if ($sighting['type'] !== '0') continue;
 				$date = date("Y-m-d", $sighting['date_sighting']);
 				if (!isset($sparklineData[$sighting['attribute_id']][$date])) {
 					$sparklineData[$sighting['attribute_id']][$date] = 1;
